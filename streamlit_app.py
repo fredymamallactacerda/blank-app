@@ -6,6 +6,25 @@ from datetime import datetime
 from io import BytesIO
 from PIL import Image
 
+# ==========================
+# CONFIGURACIÓN VISUAL
+# ==========================
+st.set_page_config(
+    page_title="Fundación Cuencas Sagradas",
+    page_icon="🌿",
+    layout="wide"
+)
+
+st.markdown(
+    """
+    <style>
+    .stApp { background-color: #e6f5e6; } /* Verde suave */
+    .stButton>button { background-color: #2c7a7b; color: white; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # -------------------------
 # Conexión a Supabase
 # -------------------------
@@ -14,6 +33,17 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 TABLE_NAME = "proyectos"
+
+def obtener_registros():
+    try:
+        response = supabase.table("proyectos").select("*").execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error obteniendo registros: {e}")
+        return pd.DataFrame()
 
 # ==========================
 # FUNCIONES CRUD
@@ -47,11 +77,13 @@ def calcular_porcentaje(parte, total):
 
 def df_to_excel(df: pd.DataFrame):
     output = BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='Proyectos')
-    writer.save()
-    processed_data = output.getvalue()
-    return processed_data
+
+    # Usar el contexto "with" evita usar writer.save() o writer.close()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Proyectos")
+
+    output.seek(0)
+    return output.read()
 
 # ==========================
 # CARGAR LOGO
@@ -64,14 +96,43 @@ def mostrar_logo():
         st.warning("No se encontró el logo logo_fundacion.png")
 
 # ==========================
+# LOGIN SIMPLE
+# ==========================
+st.sidebar.title("🔐 Login")
+
+USUARIOS = {
+    "usuario": "1234",
+    "admin": "admin123"
+}
+
+usuario_input = st.sidebar.text_input("Usuario")
+clave_input = st.sidebar.text_input("Contraseña", type="password")
+
+if st.sidebar.button("Ingresar"):
+    if usuario_input in USUARIOS and USUARIOS[usuario_input] == clave_input:
+        st.session_state["logueado"] = True
+        st.session_state["usuario"] = usuario_input
+        st.success(f"Bienvenido, {usuario_input}")
+    else:
+        st.session_state["logueado"] = False
+        st.error("Usuario o contraseña incorrectos")
+
+if not st.session_state.get("logueado"):
+    st.warning("⛔ Por favor ingresa tus credenciales para acceder")
+    st.stop()
+
+
+
+# ==========================
 # FORMULARIO DE PROYECTO
 # ==========================
 def formulario_proyecto(registro=None):
     st.markdown("### 📝 Formulario de Proyecto")
+    # --- Información General ---
     with st.expander("Información General"):
         nombre = st.text_input("Nombre del proyecto", value=registro["nombre"] if registro else "")
         pais = st.selectbox(
-            "País de intervención", 
+            "País de intervención",
             ["Ecuador", "Perú", "Biorregional: Ecuador – Perú"],
             index=["Ecuador","Perú","Biorregional: Ecuador – Perú"].index(registro["pais"]) if registro else 0
         )
@@ -80,7 +141,7 @@ def formulario_proyecto(registro=None):
         pueblo = st.text_input("Pueblo / Nacionalidad", value=registro["pueblo"] if registro else "")
         latitud = st.number_input("Latitud (Y)", value=float(registro["latitud"]) if registro else 0.0, format="%.6f")
         longitud = st.number_input("Longitud (X)", value=float(registro["longitud"]) if registro else 0.0, format="%.6f")
-
+    # --- Beneficiarios y Fechas ---
     with st.expander("Beneficiarios y Fechas"):
         benef_hombres = st.number_input("Beneficiarios hombres", min_value=0, step=1, value=int(registro["benef_hombres"]) if registro else 0)
         benef_mujeres = st.number_input("Beneficiarios mujeres", min_value=0, step=1, value=int(registro["benef_mujeres"]) if registro else 0)
@@ -90,7 +151,7 @@ def formulario_proyecto(registro=None):
         fecha_inicio = st.date_input("Fecha de inicio", value=pd.to_datetime(registro["fecha_inicio"]) if registro else datetime.today())
         fecha_fin = st.date_input("Fecha de finalización", value=pd.to_datetime(registro["fecha_fin"]) if registro else datetime.today())
         duracion = calcular_duracion(fecha_inicio, fecha_fin)
-
+    # --- Financiamiento y Planificación ---
     with st.expander("Financiamiento y Planificación"):
         monto_total = st.number_input("Monto total del proyecto", min_value=0.0, step=0.01, value=float(registro["monto_total"]) if registro else 0.0, format="%.2f")
         fuente_financiamiento = st.text_input("Fuente de financiamiento", value=registro["fuente_financiamiento"] if registro else "")
@@ -102,7 +163,7 @@ def formulario_proyecto(registro=None):
         accion_pb = st.text_input("Acción PB", value=registro["accion_pb"] if registro else "")
         objetivo_pei = st.text_input("Objetivo PEI", value=registro["objetivo_pei"] if registro else "")
         estrategia_pei = st.text_input("Estrategia PEI", value=registro["estrategia_pei"] if registro else "")
-
+    # --- Indicadores y Metas ---
     with st.expander("Indicadores y Metas"):
         indicador_pb = st.text_input("Indicador PB", value=registro["indicador_pb"] if registro else "")
         unidad_pb = st.text_input("Unidad PB", value=registro["unidad_pb"] if registro else "")
@@ -126,7 +187,7 @@ def formulario_proyecto(registro=None):
         presupuesto_programado_total = st.number_input("Presupuesto programado total", min_value=0.0, step=0.01, value=float(registro["presupuesto_programado_total"]) if registro else 0.0, format="%.2f")
         presupuesto_devengado_total = st.number_input("Presupuesto devengado total", min_value=0.0, step=0.01, value=float(registro["presupuesto_devengado_total"]) if registro else 0.0, format="%.2f")
         porcentaje_ejecucion_presupuesto = calcular_porcentaje(presupuesto_devengado_total, presupuesto_programado_total)
-
+    # --- Resultados, Logros y Responsable ---
     with st.expander("Resultados, Logros y Responsable"):
         nudos_criticos = st.text_area("Nudos críticos", value=registro["nudos_criticos"] if registro else "")
         logros_relevantes = st.text_area("Logros relevantes", value=registro["logros_relevantes"] if registro else "")
@@ -195,21 +256,6 @@ def formulario_proyecto(registro=None):
 # ==========================
 # MENÚ STREAMLIT
 # ==========================
-st.set_page_config(
-    page_title="Fundación Cuencas Sagradas",
-    page_icon="🌿",
-    layout="wide"
-)
-
-st.markdown(
-    """
-    <style>
-    .stApp { background-color: #f7f9fb; }
-    .stButton>button { background-color: #2c7a7b; color: white; }
-    </style>
-    """, unsafe_allow_html=True
-)
-
 mostrar_logo()
 st.title("Fundación Cuencas Sagradas")
 st.subheader("Sistema Indígena de Monitoreo, Seguimiento, Evaluación y Aprendizaje")
@@ -253,34 +299,63 @@ elif choice == "Ver / Editar Proyectos":
         st.info("No hay proyectos registrados.")
 
 elif choice == "Buscar y Exportar":
-    df = obtener_registros()
+
+    df = obtener_registros()   # ← CARGA REAL DE SUPABASE
+
     if not df.empty:
+
         st.subheader("🔍 Filtros de búsqueda")
+
         col1, col2, col3 = st.columns(3)
+
         with col1:
             nombre_filtro = st.text_input("Nombre del proyecto")
+
         with col2:
             provincia_filtro = st.text_input("Provincia / Departamento")
-        with col3:
-            ano_filtro = st.number_input("Año de cumplimiento de meta", min_value=1900, max_value=2100, step=1, value=0)
 
+        with col3:
+            import datetime
+            ano_actual = datetime.datetime.now().year
+            ano_filtro = st.number_input(
+                "Año de cumplimiento de meta",
+                min_value=1900,
+                max_value=2100,
+                step=1,
+                value=ano_actual
+            )
+
+        # ---- Filtros ----
         df_filtrado = df.copy()
+
         if nombre_filtro:
-            df_filtrado = df_filtrado[df_filtrado["nombre"].str.contains(nombre_filtro, case=False, na=False)]
+            df_filtrado = df_filtrado[
+                df_filtrado["nombre"].str.contains(nombre_filtro, case=False, na=False)
+            ]
+
         if provincia_filtro:
-            df_filtrado = df_filtrado[df_filtrado["provincia"].str.contains(provincia_filtro, case=False, na=False)]
-        if ano_filtro != 0:
-            df_filtrado = df_filtrado[df_filtrado["ano_meta"] == ano_filtro]
+            df_filtrado = df_filtrado[
+                df_filtrado["provincia"].str.contains(provincia_filtro, case=False, na=False)
+            ]
+
+        if ano_filtro:
+            df_filtrado = df_filtrado[df_filtrado["ano_meta"] == int(ano_filtro)]
 
         st.markdown("### 📋 Resultados filtrados")
-        st.dataframe(df_filtrado.style.highlight_max(axis=0, color="#d4f0f0"))
+        st.dataframe(df_filtrado)
 
-        excel_data = df_to_excel(df_filtrado)
-        st.download_button(
-            label="📥 Exportar a Excel",
-            data=excel_data,
-            file_name="proyectos_filtrados.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # --- Exportar ---
+        if not df_filtrado.empty:
+            excel_data = df_to_excel(df_filtrado)
+
+            st.download_button(
+                label="📥 Exportar a Excel",
+                data=excel_data,
+                file_name="proyectos_filtrados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("No se encontraron resultados con los filtros seleccionados.")
+
     else:
-        st.info("No hay proyectos registrados para exportar.")
+        st.warning("No existen registros en Supabase.")
